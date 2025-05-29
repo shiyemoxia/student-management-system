@@ -1,0 +1,38 @@
+# Python字节码文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 数据库文件
+*.db
+*.sqlite3
+
+# 日志文件
+*.log
+
+# 本地配置
+.env
+.env.*
+
+# IDE文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# Flask会话文件
+flask_session/
+
+# 分发文件
+dist/
+build/
+*.egg-info/ 
