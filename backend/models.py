@@ -471,6 +471,36 @@ class CourseOffering:
             data['year'], data['classroom'], data['class_time']
         )
         return self.db.execute_update(sql, params)
+    
+    def get_offering_by_id(self, offering_id):
+        """根据ID获取授课安排"""
+        sql = """
+            SELECT co.*, c.course_name, c.course_code, t.name as teacher_name 
+            FROM course_offering co
+            JOIN course c ON co.course_id = c.course_id
+            JOIN teacher t ON co.teacher_id = t.teacher_id
+            WHERE co.offering_id = %s
+        """
+        return self.db.execute_one(sql, (offering_id,))
+    
+    def update_offering(self, offering_id, data):
+        """更新授课安排"""
+        sql = """
+            UPDATE course_offering 
+            SET course_id = %s, teacher_id = %s, semester = %s, 
+            year = %s, classroom = %s, class_time = %s
+            WHERE offering_id = %s
+        """
+        params = (
+            data['course_id'], data['teacher_id'], data['semester'], 
+            data['year'], data['classroom'], data['class_time'], offering_id
+        )
+        return self.db.execute_update(sql, params)
+    
+    def delete_offering(self, offering_id):
+        """删除授课安排"""
+        sql = "DELETE FROM course_offering WHERE offering_id = %s"
+        return self.db.execute_update(sql, (offering_id,))
 
 # 成绩模型
 class Score:
@@ -504,4 +534,23 @@ class Score:
     def update_score(self, sc_id, score):
         """更新成绩"""
         sql = "UPDATE student_course SET score = %s, status = '已修完' WHERE sc_id = %s"
-        return self.db.execute_update(sql, (score, sc_id)) 
+        return self.db.execute_update(sql, (score, sc_id))
+        
+    def update_score_with_status(self, sc_id, score, status):
+        """更新成绩和状态"""
+        sql = "UPDATE student_course SET score = %s, status = %s WHERE sc_id = %s"
+        return self.db.execute_update(sql, (score, status, sc_id))
+        
+    def update_status(self, sc_id, status):
+        """仅更新状态"""
+        # 如果状态不是已修完，则清空成绩
+        if status != '已修完':
+            sql = "UPDATE student_course SET score = NULL, status = %s WHERE sc_id = %s"
+        else:
+            sql = "UPDATE student_course SET status = %s WHERE sc_id = %s"
+        return self.db.execute_update(sql, (status, sc_id))
+        
+    def delete_score(self, sc_id):
+        """删除成绩记录"""
+        sql = "DELETE FROM student_course WHERE sc_id = %s"
+        return self.db.execute_update(sql, (sc_id,)) 
