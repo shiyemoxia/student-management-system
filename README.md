@@ -1,52 +1,52 @@
-# 学生信息管理系统
+# 学生学籍管理系统
 
-一个基于Python和Flask的学生信息管理系统，前端使用Vue.js和Bootstrap，数据库使用MySQL。
+一个基于Python Flask的学生学籍管理系统，前端采用Vue.js和Bootstrap，后端使用MySQL数据库。
 
-## 功能特点
+## 功能模块
 
-- 学生管理：登记和管理学生基本信息
-- 教师管理：登记和管理教师基本情况
-- 课程管理：登记和管理课程基本情况
-- 成绩管理：登记和管理学生课程成绩
-- 授课管理：登记和管理教师授课安排
-- 编码维护：管理系统中使用的各类编码
+- **学生管理**：添加、编辑、查看和删除学生信息
+- **教师管理**：管理教师基本信息及职称
+- **课程管理**：课程的增删改查功能
+- **授课管理**：教师授课安排管理
+- **成绩管理**：学生成绩录入、查看和统计
 
 ## 技术栈
 
-- 后端：Python + Flask
-- 前端：Vue.js + Bootstrap 5
-- 数据库：MySQL
+- **前端**：Vue.js + Bootstrap 5
+- **后端**：Python Flask
+- **数据库**：MySQL
 
-## 安装说明
+## 开发环境配置
 
-### 1. 安装依赖
-
+### 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 配置数据库
-
+### 配置数据库
 1. 创建MySQL数据库
-2. 在`backend/config.py`中修改数据库连接信息
-3. 导入数据库模式
+2. 修改`backend/config.py`中的数据库连接参数
+3. 运行`python create_tables.py`初始化数据库
 
+### 运行应用
 ```bash
-mysql -u username -p database_name < database/schema.sql
+python run.py
 ```
 
-### 3. 运行应用
+## 系统账号
+- **管理员账号**：admin
+- **密码**：123456
 
-```bash
-python -m backend.app
-```
+## 更新历史
 
-应用将在 http://localhost:5000 运行。
+### v2.0
+- 优化授课管理查看功能
+- 重构成绩管理模块
+- 改进添加成绩用户体验
 
-### 4. 初始登录信息
-
-- 用户名：admin
-- 密码：123456
+### v1.0
+- 初始版本发布
+- 实现基础功能模块
 
 ## 项目结构
 
