@@ -1,5 +1,45 @@
 // 创建Vue应用
-const { createApp, ref, onMounted, reactive, computed } = Vue;
+const { createApp, ref, onMounted, reactive, computed, watch } = Vue;
+
+// 添加通用的日期格式化函数
+function formatDateForInput(dateString) {
+    if (!dateString) return '';
+    
+    try {
+        // 处理常见格式
+        let date;
+        if (dateString.includes('T')) {
+            // ISO格式 (YYYY-MM-DDTHH:mm:ss.sssZ)
+            date = new Date(dateString);
+        } else if (dateString.includes('/')) {
+            // YYYY/MM/DD格式
+            const parts = dateString.split('/');
+            date = new Date(parts[0], parts[1] - 1, parts[2]);
+        } else if (dateString.includes('-')) {
+            // YYYY-MM-DD格式
+            date = new Date(dateString);
+        } else {
+            // 尝试作为时间戳处理
+            date = new Date(Number(dateString));
+        }
+        
+        // 检查日期是否有效
+        if (isNaN(date.getTime())) {
+            console.error('无效的日期:', dateString);
+            return '';
+        }
+        
+        // 格式化为YYYY-MM-DD (HTML input[type=date]需要的格式)
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        
+        return `${year}-${month}-${day}`;
+    } catch (e) {
+        console.error('日期格式化错误:', e);
+        return '';
+    }
+}
 
 const app = createApp({
     setup() {
@@ -113,7 +153,7 @@ const app = createApp({
         const editingScoreId = ref(null);
         const allScores = ref([]);
         const scoreFilter = ref('');
-
+        
         // 成绩统计
         const totalCredits = computed(() => {
             let total = 0;
@@ -181,6 +221,329 @@ const app = createApp({
             );
         });
 
+        // 班级管理相关
+        const classTabActive = ref('class'); // 默认显示班级管理标签
+        const classSearch = ref('');
+        const collegeSearch = ref('');
+        const classForm = reactive({
+            class_name: '',
+            class_code: '',
+            college_id: '',
+            admission_year: new Date().getFullYear()
+        });
+        const collegeForm = reactive({
+            college_name: '',
+            college_code: ''
+        });
+        const editingClassId = ref(null);
+        const editingCollegeId = ref(null);
+        
+        // 学院排序相关
+        const collegeSortField = ref('college_name');
+        const collegeSortOrder = ref('asc');
+        
+        // 过滤后的班级列表
+        const filteredClasses = computed(() => {
+            if (!classSearch.value) return classes.value;
+            const filter = classSearch.value.toLowerCase();
+            return classes.value.filter(cls => 
+                cls.class_name.toLowerCase().includes(filter) || 
+                cls.class_code.toLowerCase().includes(filter) ||
+                cls.college_name.toLowerCase().includes(filter)
+            );
+        });
+        
+        // 过滤后的学院列表
+        const filteredColleges = computed(() => {
+            if (!collegeSearch.value) return colleges.value;
+            const filter = collegeSearch.value.toLowerCase();
+            return colleges.value.filter(college => 
+                college.college_name.toLowerCase().includes(filter) || 
+                (college.college_code && college.college_code.toLowerCase().includes(filter))
+            );
+        });
+        
+        // 排序后的学院列表
+        const sortedColleges = computed(() => {
+            return [...filteredColleges.value].sort((a, b) => {
+                const fieldA = a[collegeSortField.value];
+                const fieldB = b[collegeSortField.value];
+                
+                // 处理数字字段特殊情况
+                if (!isNaN(Number(fieldA)) && !isNaN(Number(fieldB))) {
+                    return collegeSortOrder.value === 'asc' 
+                        ? Number(fieldA) - Number(fieldB) 
+                        : Number(fieldB) - Number(fieldA);
+                }
+                
+                // 普通字符串比较
+                const compareResult = String(fieldA).localeCompare(String(fieldB));
+                return collegeSortOrder.value === 'asc' ? compareResult : -compareResult;
+            });
+        });
+        
+        const resetCollegeForm = () => {
+            Object.assign(collegeForm, {
+                college_name: '',
+                college_code: ''
+            });
+            editingCollegeId.value = null;
+        };
+        
+        const saveCollege = async () => {
+            try {
+                await axios.post('/api/student/college', collegeForm);
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addCollegeModal'));
+                modal.hide();
+                // 重新加载学院数据
+                await loadColleges();
+                // 重置表单
+                resetCollegeForm();
+                alert('学院添加成功');
+            } catch (error) {
+                console.error('添加学院失败:', error);
+                alert(error.response?.data?.error || '添加学院失败，请稍后重试');
+            }
+        };
+        
+        const editCollege = async (collegeId) => {
+            try {
+                const response = await axios.get(`/api/student/college/${collegeId}`);
+                // 填充表单
+                Object.assign(collegeForm, response.data.college);
+                editingCollegeId.value = collegeId;
+                
+                // 打开编辑模态框
+                const modal = new bootstrap.Modal(document.getElementById('editCollegeModal'));
+                modal.show();
+            } catch (error) {
+                console.error('获取学院信息失败:', error);
+            }
+        };
+        
+        const updateCollege = async () => {
+            if (!editingCollegeId.value) return;
+            
+            try {
+                await axios.put(`/api/student/college/${editingCollegeId.value}`, collegeForm);
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editCollegeModal'));
+                modal.hide();
+                // 重新加载学院数据
+                await loadColleges();
+                // 重置表单
+                resetCollegeForm();
+                alert('学院更新成功');
+            } catch (error) {
+                console.error('更新学院失败:', error);
+                alert(error.response?.data?.error || '更新学院失败，请稍后重试');
+            }
+        };
+        
+        const confirmDeleteCollege = (collegeId) => {
+            if (confirm('确定要删除这个学院吗？这可能会影响到已关联该学院的班级和教师。')) {
+                deleteCollege(collegeId);
+            }
+        };
+        
+        const deleteCollege = async (collegeId) => {
+            try {
+                await axios.delete(`/api/student/college/${collegeId}`);
+                // 重新加载学院数据
+                await loadColleges();
+                alert('学院删除成功');
+            } catch (error) {
+                console.error('删除学院失败:', error);
+                alert(error.response?.data?.error || '删除学院失败，请稍后重试');
+            }
+        };
+
+        // 排序相关
+        const studentSortField = ref('student_no');
+        const studentSortOrder = ref('asc');
+        const teacherSortField = ref('teacher_no');
+        const teacherSortOrder = ref('asc');
+        const classSortField = ref('class_code');
+        const classSortOrder = ref('asc');
+        const courseSortField = ref('course_code');
+        const courseSortOrder = ref('asc');
+        const offeringSortField = ref('year');
+        const offeringSortOrder = ref('desc');
+        
+        // 切换排序顺序
+        const toggleSort = (module, field) => {
+            switch (module) {
+                case 'student':
+                    if (studentSortField.value === field) {
+                        studentSortOrder.value = studentSortOrder.value === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        studentSortField.value = field;
+                        studentSortOrder.value = 'asc';
+                    }
+                    break;
+                case 'teacher':
+                    if (teacherSortField.value === field) {
+                        teacherSortOrder.value = teacherSortOrder.value === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        teacherSortField.value = field;
+                        teacherSortOrder.value = 'asc';
+                    }
+                    break;
+                case 'class':
+                    if (classSortField.value === field) {
+                        classSortOrder.value = classSortOrder.value === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        classSortField.value = field;
+                        classSortOrder.value = 'asc';
+                    }
+                    break;
+                case 'course':
+                    if (courseSortField.value === field) {
+                        courseSortOrder.value = courseSortOrder.value === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        courseSortField.value = field;
+                        courseSortOrder.value = 'asc';
+                    }
+                    break;
+                case 'offering':
+                    if (offeringSortField.value === field) {
+                        offeringSortOrder.value = offeringSortOrder.value === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        offeringSortField.value = field;
+                        offeringSortOrder.value = 'asc';
+                    }
+                    break;
+            }
+        };
+        
+        // 获取排序图标
+        const getSortIcon = (module, field) => {
+            let currentField, currentOrder;
+            
+            switch (module) {
+                case 'student':
+                    currentField = studentSortField.value;
+                    currentOrder = studentSortOrder.value;
+                    break;
+                case 'teacher':
+                    currentField = teacherSortField.value;
+                    currentOrder = teacherSortOrder.value;
+                    break;
+                case 'class':
+                    currentField = classSortField.value;
+                    currentOrder = classSortOrder.value;
+                    break;
+                case 'course':
+                    currentField = courseSortField.value;
+                    currentOrder = courseSortOrder.value;
+                    break;
+                case 'offering':
+                    currentField = offeringSortField.value;
+                    currentOrder = offeringSortOrder.value;
+                    break;
+            }
+            
+            if (currentField !== field) {
+                return 'bi-arrow-down-up text-muted';
+            } else if (currentOrder === 'asc') {
+                return 'bi-sort-down text-primary';
+            } else {
+                return 'bi-sort-up text-primary';
+            }
+        };
+        
+        // 对数据进行排序的计算属性
+        const sortedStudents = computed(() => {
+            return [...students.value].sort((a, b) => {
+                const fieldA = a[studentSortField.value];
+                const fieldB = b[studentSortField.value];
+                
+                // 处理数字字段特殊情况
+                if (!isNaN(Number(fieldA)) && !isNaN(Number(fieldB))) {
+                    return studentSortOrder.value === 'asc' 
+                        ? Number(fieldA) - Number(fieldB) 
+                        : Number(fieldB) - Number(fieldA);
+                }
+                
+                // 普通字符串比较
+                const compareResult = String(fieldA).localeCompare(String(fieldB));
+                return studentSortOrder.value === 'asc' ? compareResult : -compareResult;
+            });
+        });
+        
+        const sortedTeachers = computed(() => {
+            return [...teachers.value].sort((a, b) => {
+                const fieldA = a[teacherSortField.value];
+                const fieldB = b[teacherSortField.value];
+                
+                // 处理数字字段特殊情况
+                if (!isNaN(Number(fieldA)) && !isNaN(Number(fieldB))) {
+                    return teacherSortOrder.value === 'asc' 
+                        ? Number(fieldA) - Number(fieldB) 
+                        : Number(fieldB) - Number(fieldA);
+                }
+                
+                // 普通字符串比较
+                const compareResult = String(fieldA).localeCompare(String(fieldB));
+                return teacherSortOrder.value === 'asc' ? compareResult : -compareResult;
+            });
+        });
+        
+        const sortedClasses = computed(() => {
+            return [...classes.value].sort((a, b) => {
+                const fieldA = a[classSortField.value];
+                const fieldB = b[classSortField.value];
+                
+                // 处理数字字段特殊情况
+                if (!isNaN(Number(fieldA)) && !isNaN(Number(fieldB))) {
+                    return classSortOrder.value === 'asc' 
+                        ? Number(fieldA) - Number(fieldB) 
+                        : Number(fieldB) - Number(fieldA);
+                }
+                
+                // 普通字符串比较
+                const compareResult = String(fieldA).localeCompare(String(fieldB));
+                return classSortOrder.value === 'asc' ? compareResult : -compareResult;
+            });
+        });
+        
+        const sortedCourses = computed(() => {
+            return [...courses.value].sort((a, b) => {
+                const fieldA = a[courseSortField.value];
+                const fieldB = b[courseSortField.value];
+                
+                // 处理数字字段特殊情况
+                if (!isNaN(Number(fieldA)) && !isNaN(Number(fieldB))) {
+                    return courseSortOrder.value === 'asc' 
+                        ? Number(fieldA) - Number(fieldB) 
+                        : Number(fieldB) - Number(fieldA);
+                }
+                
+                // 普通字符串比较
+                const compareResult = String(fieldA).localeCompare(String(fieldB));
+                return courseSortOrder.value === 'asc' ? compareResult : -compareResult;
+            });
+        });
+        
+        const sortedOfferings = computed(() => {
+            return [...offerings.value].sort((a, b) => {
+                const fieldA = a[offeringSortField.value];
+                const fieldB = b[offeringSortField.value];
+                
+                // 处理数字字段特殊情况
+                if (!isNaN(Number(fieldA)) && !isNaN(Number(fieldB))) {
+                    return offeringSortOrder.value === 'asc' 
+                        ? Number(fieldA) - Number(fieldB) 
+                        : Number(fieldB) - Number(fieldA);
+                }
+                
+                // 普通字符串比较
+                const compareResult = String(fieldA).localeCompare(String(fieldB));
+                return offeringSortOrder.value === 'asc' ? compareResult : -compareResult;
+            });
+        });
+        
         // 校验登录状态
         const checkAuth = async () => {
             try {
@@ -254,6 +617,10 @@ const app = createApp({
                     loadStudents();
                     loadOfferings();
                     break;
+                case 'class':
+                    loadClasses();
+                    loadColleges();
+                    break;
             }
         };
 
@@ -285,6 +652,17 @@ const app = createApp({
             }
         };
 
+        // 添加防抖函数
+        const debounce = (fn, delay) => {
+            let timer = null;
+            return function (...args) {
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => {
+                    fn.apply(this, args);
+                }, delay);
+            };
+        };
+        
         // 学生管理相关函数
         const loadStudents = async () => {
             try {
@@ -295,6 +673,12 @@ const app = createApp({
                 console.error('加载学生数据失败:', error);
             }
         };
+
+        // 使用 watch 监听搜索输入，实现实时搜索
+        watch(studentSearch, debounce(() => {
+            studentPage.value = 1;
+            loadStudents();
+        }, 300));
 
         const searchStudents = () => {
             studentPage.value = 1;
@@ -320,13 +704,14 @@ const app = createApp({
         };
 
         const resetStudentForm = () => {
+            const today = new Date().toISOString().split('T')[0]; // 获取当天日期，格式为YYYY-MM-DD
             Object.assign(studentForm, {
                 student_no: '',
                 name: '',
                 gender: '男',
                 birth_date: '',
                 id_card: '',
-                enrollment_date: '',
+                enrollment_date: today, // 默认为当天
                 class_id: '',
                 address: '',
                 phone: '',
@@ -338,6 +723,13 @@ const app = createApp({
 
         const saveStudent = async () => {
             try {
+                // 检查权限
+                if (currentUser.value.role !== 'admin') {
+                    alert('您没有管理员权限，无法添加学生');
+                    return;
+                }
+                
+                console.log('保存学生数据:', studentForm);
                 await axios.post('/api/student/', studentForm);
                 // 关闭模态框
                 const modal = bootstrap.Modal.getInstance(document.getElementById('addStudentModal'));
@@ -348,7 +740,11 @@ const app = createApp({
                 resetStudentForm();
             } catch (error) {
                 console.error('添加学生失败:', error);
-                alert(error.response?.data?.error || '添加学生失败，请稍后重试');
+                if (error.response?.status === 403) {
+                    alert('您没有权限执行此操作');
+                } else {
+                    alert(error.response?.data?.error || '添加学生失败，请稍后重试');
+                }
             }
         };
 
@@ -374,7 +770,13 @@ const app = createApp({
             try {
                 const response = await axios.get(`/api/student/${studentId}`);
                 // 填充表单
-                Object.assign(studentForm, response.data.student);
+                const studentData = {...response.data.student};
+                
+                // 处理日期格式
+                studentData.birth_date = formatDateForInput(studentData.birth_date);
+                studentData.enrollment_date = formatDateForInput(studentData.enrollment_date);
+                
+                Object.assign(studentForm, studentData);
                 editingStudentId.value = studentId;
                 
                 // 打开编辑模态框
@@ -389,6 +791,12 @@ const app = createApp({
             if (!editingStudentId.value) return;
             
             try {
+                // 检查权限
+                if (currentUser.value.role !== 'admin') {
+                    alert('您没有管理员权限，无法修改学生信息');
+                    return;
+                }
+                
                 await axios.put(`/api/student/${editingStudentId.value}`, studentForm);
                 // 关闭模态框
                 const modal = bootstrap.Modal.getInstance(document.getElementById('editStudentModal'));
@@ -399,7 +807,11 @@ const app = createApp({
                 resetStudentForm();
             } catch (error) {
                 console.error('更新学生失败:', error);
-                alert(error.response?.data?.error || '更新学生失败，请稍后重试');
+                if (error.response?.status === 403) {
+                    alert('您没有权限执行此操作');
+                } else {
+                    alert(error.response?.data?.error || '更新学生失败，请稍后重试');
+                }
             }
         };
 
@@ -431,6 +843,12 @@ const app = createApp({
             }
         };
 
+        // 实时搜索教师
+        watch(teacherSearch, debounce(() => {
+            teacherPage.value = 1;
+            loadTeachers();
+        }, 300));
+
         const searchTeachers = () => {
             teacherPage.value = 1;
             loadTeachers();
@@ -446,11 +864,12 @@ const app = createApp({
         };
 
         const resetTeacherForm = () => {
+            const today = new Date().toISOString().split('T')[0]; // 获取当天日期，格式为YYYY-MM-DD
             Object.assign(teacherForm, {
                 teacher_no: '',
                 name: '',
                 gender: '男',
-                birth_date: '',
+                birth_date: today, // 默认为当天
                 title_id: '',
                 college_id: '',
                 phone: '',
@@ -461,6 +880,13 @@ const app = createApp({
 
         const saveTeacher = async () => {
             try {
+                // 检查权限
+                if (currentUser.value.role !== 'admin') {
+                    alert('您没有管理员权限，无法添加教师');
+                    return;
+                }
+                
+                console.log('保存教师数据:', teacherForm);
                 await axios.post('/api/teacher/', teacherForm);
                 // 关闭模态框
                 const modal = bootstrap.Modal.getInstance(document.getElementById('addTeacherModal'));
@@ -471,7 +897,11 @@ const app = createApp({
                 resetTeacherForm();
             } catch (error) {
                 console.error('添加教师失败:', error);
-                alert(error.response?.data?.error || '添加教师失败，请稍后重试');
+                if (error.response?.status === 403) {
+                    alert('您没有权限执行此操作');
+                } else {
+                    alert(error.response?.data?.error || '添加教师失败，请稍后重试');
+                }
             }
         };
 
@@ -497,7 +927,12 @@ const app = createApp({
             try {
                 const response = await axios.get(`/api/teacher/${teacherId}`);
                 // 填充表单
-                Object.assign(teacherForm, response.data.teacher);
+                const teacherData = {...response.data.teacher};
+                
+                // 处理日期格式
+                teacherData.birth_date = formatDateForInput(teacherData.birth_date);
+                
+                Object.assign(teacherForm, teacherData);
                 editingTeacherId.value = teacherId;
                 
                 // 打开编辑模态框
@@ -512,6 +947,12 @@ const app = createApp({
             if (!editingTeacherId.value) return;
             
             try {
+                // 检查权限
+                if (currentUser.value.role !== 'admin') {
+                    alert('您没有管理员权限，无法修改教师信息');
+                    return;
+                }
+                
                 await axios.put(`/api/teacher/${editingTeacherId.value}`, teacherForm);
                 // 关闭模态框
                 const modal = bootstrap.Modal.getInstance(document.getElementById('editTeacherModal'));
@@ -522,7 +963,11 @@ const app = createApp({
                 resetTeacherForm();
             } catch (error) {
                 console.error('更新教师失败:', error);
-                alert(error.response?.data?.error || '更新教师失败，请稍后重试');
+                if (error.response?.status === 403) {
+                    alert('您没有权限执行此操作');
+                } else {
+                    alert(error.response?.data?.error || '更新教师失败，请稍后重试');
+                }
             }
         };
 
@@ -553,6 +998,12 @@ const app = createApp({
                 console.error('加载课程数据失败:', error);
             }
         };
+
+        // 实时搜索课程
+        watch(courseSearch, debounce(() => {
+            coursePage.value = 1;
+            loadCourses();
+        }, 300));
 
         const searchCourses = () => {
             coursePage.value = 1;
@@ -674,6 +1125,12 @@ const app = createApp({
                 console.error('加载授课安排数据失败:', error);
             }
         };
+
+        // 实时搜索授课安排
+        watch(offeringSearch, debounce(() => {
+            offeringPage.value = 1;
+            loadOfferings();
+        }, 300));
 
         const searchOfferings = () => {
             offeringPage.value = 1;
@@ -977,9 +1434,155 @@ const app = createApp({
             modal.show();
         };
 
+        // 班级管理相关函数
+        const filterClasses = () => {
+            // 使用计算属性filteredClasses，无需额外处理
+        };
+        
+        const resetClassForm = () => {
+            Object.assign(classForm, {
+                class_name: '',
+                class_code: '',
+                college_id: '',
+                admission_year: new Date().getFullYear()
+            });
+            editingClassId.value = null;
+        };
+        
+        const saveClass = async () => {
+            try {
+                await axios.post('/api/student/class', classForm);
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addClassModal'));
+                modal.hide();
+                // 重新加载班级数据
+                await loadClasses();
+                // 重置表单
+                resetClassForm();
+                alert('班级添加成功');
+            } catch (error) {
+                console.error('添加班级失败:', error);
+                alert(error.response?.data?.error || '添加班级失败，请稍后重试');
+            }
+        };
+        
+        const editClass = async (classId) => {
+            try {
+                const response = await axios.get(`/api/student/class/${classId}`);
+                // 填充表单
+                Object.assign(classForm, response.data.class);
+                editingClassId.value = classId;
+                
+                // 打开编辑模态框
+                const modal = new bootstrap.Modal(document.getElementById('editClassModal'));
+                modal.show();
+            } catch (error) {
+                console.error('获取班级信息失败:', error);
+            }
+        };
+        
+        const updateClass = async () => {
+            if (!editingClassId.value) return;
+            
+            try {
+                await axios.put(`/api/student/class/${editingClassId.value}`, classForm);
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editClassModal'));
+                modal.hide();
+                // 重新加载班级数据
+                await loadClasses();
+                // 重置表单
+                resetClassForm();
+                alert('班级更新成功');
+            } catch (error) {
+                console.error('更新班级失败:', error);
+                alert(error.response?.data?.error || '更新班级失败，请稍后重试');
+            }
+        };
+        
+        const confirmDeleteClass = (classId) => {
+            if (confirm('确定要删除这个班级吗？这可能会影响到已关联该班级的学生。')) {
+                deleteClass(classId);
+            }
+        };
+        
+        const deleteClass = async (classId) => {
+            try {
+                await axios.delete(`/api/student/class/${classId}`);
+                // 重新加载班级数据
+                await loadClasses();
+                alert('班级删除成功');
+            } catch (error) {
+                console.error('删除班级失败:', error);
+                alert(error.response?.data?.error || '删除班级失败，请稍后重试');
+            }
+        };
+
+        // 实时过滤班级
+        watch(classSearch, debounce(() => {
+            // 使用计算属性 filteredClasses 进行过滤
+        }, 300));
+
+        // 实时过滤学生
+        watch(studentSearch, debounce(() => {
+            studentPage.value = 1;
+            if (activeModule.value === 'score') {
+                loadStudents();
+            }
+        }, 300));
+
+        // 实时过滤成绩
+        watch(scoreFilter, debounce(() => {
+            // 使用计算属性 filteredScores 进行过滤
+        }, 300));
+
         // 在组件挂载时检查登录状态
         onMounted(() => {
             checkAuth();
+        });
+
+        // 添加表单中的过滤变量
+        const classFilterForForm = ref('');
+        const collegeFilterForForm = ref('');
+        const titleFilterForForm = ref('');
+        const courseTypeFilterForForm = ref('');
+        
+        // 为表单添加过滤后的计算属性
+        const filteredClassesForForm = computed(() => {
+            if (!classFilterForForm.value) return classes.value;
+            const filter = classFilterForForm.value.toLowerCase();
+            return classes.value.filter(cls => 
+                cls.class_name.toLowerCase().includes(filter) || 
+                cls.class_code.toLowerCase().includes(filter) ||
+                cls.college_name.toLowerCase().includes(filter)
+            );
+        });
+        
+        const filteredCollegesForForm = computed(() => {
+            if (!collegeFilterForForm.value) return colleges.value;
+            const filter = collegeFilterForForm.value.toLowerCase();
+            return colleges.value.filter(college => 
+                college.college_name.toLowerCase().includes(filter) || 
+                college.college_code.toLowerCase().includes(filter)
+            );
+        });
+        
+        const filteredTitlesForForm = computed(() => {
+            if (!titleFilterForForm.value) return titles.value;
+            const filter = titleFilterForForm.value.toLowerCase();
+            return titles.value.filter(title => 
+                title.title_name.toLowerCase().includes(filter) || 
+                title.title_code.toLowerCase().includes(filter)
+            );
+        });
+        
+        const filteredCourseTypesForForm = computed(() => {
+            if (!courseTypeFilterForForm.value) return courseTypes.value;
+            const filter = courseTypeFilterForForm.value.toLowerCase();
+            return courseTypes.value.filter(type => 
+                type.type_name.toLowerCase().includes(filter) || 
+                type.type_code.toLowerCase().includes(filter)
+            );
         });
 
         return {
@@ -1023,6 +1626,7 @@ const app = createApp({
             editStudent,
             updateStudent,
             confirmDeleteStudent,
+            sortedStudents,
             
             // 教师管理相关
             teachers,
@@ -1037,6 +1641,7 @@ const app = createApp({
             editTeacher,
             updateTeacher,
             confirmDeleteTeacher,
+            sortedTeachers,
             
             // 课程管理相关
             courses,
@@ -1051,6 +1656,7 @@ const app = createApp({
             editCourse,
             updateCourse,
             confirmDeleteCourse,
+            sortedCourses,
             
             // 授课管理相关
             offerings,
@@ -1064,6 +1670,7 @@ const app = createApp({
             editOffering,
             updateOffering,
             confirmDeleteOffering,
+            sortedOfferings,
             
             // 成绩管理相关
             scores,
@@ -1093,7 +1700,55 @@ const app = createApp({
             // 过滤后的列表
             filteredCourses,
             filteredTeachers,
-            filteredOfferings
+            filteredOfferings,
+            
+            // 班级管理相关
+            classTabActive,
+            classSearch,
+            collegeSearch,
+            classForm,
+            collegeForm,
+            filteredClasses,
+            sortedClasses,
+            filterClasses,
+            saveClass,
+            editClass,
+            updateClass,
+            confirmDeleteClass,
+            editingClassId,
+            editingCollegeId,
+            filteredColleges,
+            sortedColleges,
+            resetCollegeForm,
+            saveCollege,
+            editCollege,
+            updateCollege,
+            confirmDeleteCollege,
+            deleteCollege,
+            
+            // 排序相关
+            toggleSort,
+            getSortIcon,
+            studentSortField,
+            studentSortOrder,
+            teacherSortField,
+            teacherSortOrder,
+            classSortField,
+            classSortOrder,
+            courseSortField,
+            courseSortOrder,
+            offeringSortField,
+            offeringSortOrder,
+            
+            // 表单过滤
+            classFilterForForm,
+            collegeFilterForForm,
+            titleFilterForForm,
+            courseTypeFilterForForm,
+            filteredClassesForForm,
+            filteredCollegesForForm,
+            filteredTitlesForForm,
+            filteredCourseTypesForForm
         };
     }
 });

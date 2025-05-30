@@ -109,6 +109,42 @@ class User:
         sql = "INSERT INTO user (username, password, role, related_id) VALUES (%s, %s, %s, %s)"
         return self.db.execute_update(sql, (username, password, role, related_id))
 
+    def update_password(self, user_id, new_password):
+        """更新用户密码
+        
+        参数:
+            user_id (int): 用户ID
+            new_password (str): 新密码
+            
+        返回:
+            bool: 更新是否成功
+        """
+        sql = "UPDATE user SET password = %s WHERE user_id = %s"
+        return self.db.execute_update(sql, (new_password, user_id))
+    
+    def check_password(self, user_id, password):
+        """检查密码是否正确
+        
+        参数:
+            user_id (int): 用户ID
+            password (str): 要检查的密码
+            
+        返回:
+            bool: 密码是否正确
+        """
+        sql = "SELECT * FROM user WHERE user_id = %s AND password = %s"
+        user = self.db.execute_one(sql, (user_id, password))
+        return user is not None
+    
+    def get_all_users(self):
+        """获取所有用户
+        
+        返回:
+            list: 所有用户的列表
+        """
+        sql = "SELECT * FROM user ORDER BY user_id"
+        return self.db.execute_query(sql)
+
 # 学生模型
 class Student:
     def __init__(self):
@@ -386,6 +422,38 @@ class Class:
             WHERE c.class_id = %s
         """
         return self.db.execute_one(sql, (class_id,))
+        
+    def add_class(self, data):
+        """添加班级"""
+        sql = """
+            INSERT INTO class 
+            (class_name, class_code, college_id, admission_year) 
+            VALUES (%s, %s, %s, %s)
+        """
+        params = (
+            data['class_name'], data['class_code'], 
+            data['college_id'], data['admission_year']
+        )
+        return self.db.execute_update(sql, params)
+    
+    def update_class(self, class_id, data):
+        """更新班级"""
+        sql = """
+            UPDATE class 
+            SET class_name = %s, class_code = %s, 
+            college_id = %s, admission_year = %s
+            WHERE class_id = %s
+        """
+        params = (
+            data['class_name'], data['class_code'], 
+            data['college_id'], data['admission_year'], class_id
+        )
+        return self.db.execute_update(sql, params)
+    
+    def delete_class(self, class_id):
+        """删除班级"""
+        sql = "DELETE FROM class WHERE class_id = %s"
+        return self.db.execute_update(sql, (class_id,))
 
 # 学院模型
 class College:
@@ -396,6 +464,36 @@ class College:
         """获取所有学院"""
         sql = "SELECT * FROM college ORDER BY college_id"
         return self.db.execute_query(sql)
+        
+    def get_college_by_id(self, college_id):
+        """根据ID获取学院"""
+        sql = "SELECT * FROM college WHERE college_id = %s"
+        return self.db.execute_one(sql, (college_id,))
+        
+    def add_college(self, data):
+        """添加学院"""
+        sql = """
+            INSERT INTO college 
+            (college_name, college_code) 
+            VALUES (%s, %s)
+        """
+        params = (data['college_name'], data['college_code'])
+        return self.db.execute_update(sql, params)
+    
+    def update_college(self, college_id, data):
+        """更新学院"""
+        sql = """
+            UPDATE college 
+            SET college_name = %s, college_code = %s
+            WHERE college_id = %s
+        """
+        params = (data['college_name'], data['college_code'], college_id)
+        return self.db.execute_update(sql, params)
+    
+    def delete_college(self, college_id):
+        """删除学院"""
+        sql = "DELETE FROM college WHERE college_id = %s"
+        return self.db.execute_update(sql, (college_id,))
 
 # 职称模型
 class Title:
